@@ -12,20 +12,21 @@ import warnings
 from urllib3.exceptions import InsecureRequestWarning
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Ignore SSL certificate warnings
+# تجاهل تحذيرات SSL
 warnings.filterwarnings("ignore", category=InsecureRequestWarning)
 
+# مفاتيح التشفير
 AES_KEY = b'Yg&tc%DEuh6%Zc^8'
 AES_IV = b'6oyZDr22E3ychjM%'
 
-# Initialize colorama
+# تهيئة colorama
 init(autoreset=True)
 
-# Initialize Flask app
+# تهيئة تطبيق Flask
 app = Flask(__name__)
 
-# Configure Flask-Caching
-cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 25200})  # 7 ساعات بالثواني (7 * 60 * 60)
+# تهيئة التخزين المؤقت
+cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 25200})  # 7 ساعات
 
 def get_token(password, uid):
     url = "https://ffmconnect.live.gop.garenanow.com/oauth/guest/token/grant"
@@ -44,8 +45,9 @@ def get_token(password, uid):
         "client_secret": "2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3",
         "client_id": "100067"
     }
-    response = requests.post(url, headers=headers, data=data)
+    response = requests.post(url, headers=headers, data=data, verify=False, timeout=10)
     if response.status_code != 200:
+        print(Fore.RED + f"Failed to retrieve token for UID {uid}: {response.text}")
         return None
     return response.json()
 
@@ -56,12 +58,16 @@ def encrypt_message(key, iv, plaintext):
     return encrypted_message
 
 def load_tokens(file_path, limit=None):
-    with open(file_path, 'r') as file:
-        data = json.load(file)
-        tokens = list(data.items())
-        if limit is not None:
-            tokens = tokens[:limit]  # تحديد عدد التوكنات
-        return tokens
+    try:
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+            tokens = list(data.items())
+            if limit is not None:
+                tokens = tokens[:limit]  # تحديد عدد التوكنات
+            return tokens
+    except Exception as e:
+        print(Fore.RED + f"Failed to load tokens: {e}")
+        return []
 
 def parse_response(response_content):
     # تحليل الـ response لاستخراج الحقول المهمة
@@ -156,7 +162,7 @@ def process_token(uid, password):
     edata = bytes.fromhex(hex_encrypted_data)
 
     try:
-        response = requests.post(url, data=edata, headers=headers, verify=False)
+        response = requests.post(url, data=edata, headers=headers, verify=False, timeout=10)
         if response.status_code == 200:
             # محاولة فك تشفير الـ Protobuf
             example_msg = output_pb2.Garena_420()
@@ -165,8 +171,8 @@ def process_token(uid, password):
                 # تحليل الـ response لاستخراج الحقول المهمة
                 response_dict = parse_response(str(example_msg))
                 return {
-#                    "uid": uid,
-#                    "status": response_dict.get("status", "N/A"),
+                    "uid": uid,
+                    "status": response_dict.get("status", "N/A"),
                     "token": response_dict.get("token", "N/A")
                 }
             except Exception as e:
@@ -196,7 +202,7 @@ def get_responses():
     responses = []
 
     # استخدام ThreadPoolExecutor لتنفيذ المهام بشكل متوازي
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    with ThreadPoolExecutor(max_workers=15) as executor:
         future_to_uid = {executor.submit(process_token, uid, password): uid for uid, password in tokens}
         for future in as_completed(future_to_uid):
             try:
@@ -205,7 +211,10 @@ def get_responses():
             except Exception as e:
                 responses.append({"uid": future_to_uid[future], "error": str(e)})
 
-    return jsonify(responses)
+    # استخراج قائمة التوكنات فقط
+    token_list = [item['token'] for item in responses if 'token' in item]
 
-if __name__ == "__main__":
-    app.run(debug=True)
+    return jsonify({"tokens": token_list})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
