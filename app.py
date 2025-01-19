@@ -11,6 +11,7 @@ from colorama import Fore, Style, init
 import warnings
 from urllib3.exceptions import InsecureRequestWarning
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time  # إضافة مكتبة time
 
 # تجاهل تحذيرات SSL
 warnings.filterwarnings("ignore", category=InsecureRequestWarning)
@@ -208,6 +209,7 @@ def get_responses():
             try:
                 response = future.result()
                 responses.append(response)
+                time.sleep(1)  # إضافة تأخير زمني قصير بين كل طلب
             except Exception as e:
                 responses.append({"uid": future_to_uid[future], "error": str(e)})
 
